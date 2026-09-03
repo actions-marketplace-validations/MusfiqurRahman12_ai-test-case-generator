@@ -257,6 +257,54 @@ ${testCase.expectedResult}
 Return ONLY the TypeScript code for the Playwright test file. Do NOT include markdown code fences.`;
 }
 
+/**
+ * Build the prompt for generating an entire Playwright automation suite (batch mode).
+ * Combines all test cases in a feature area into a single prompt to minimize API calls.
+ */
+export function buildAutomationSuitePrompt(
+  featureArea: string,
+  testCases: TestCase[],
+  projectContext: ProjectContext
+): string {
+  const isWeb = projectContext.hasFrontend;
+  const isAPI = projectContext.hasBackend && !projectContext.hasFrontend;
+
+  const testCasesText = testCases
+    .map(
+      (tc, idx) => `
+### Test Case ${idx + 1}: [${tc.id}] ${tc.title}
+- **Type**: ${tc.type}
+- **Description**: ${tc.description}
+- **Preconditions**:
+${tc.preconditions.length > 0 ? tc.preconditions.map((p) => `  - ${p}`).join('\n') : '  - None'}
+- **Steps**:
+${tc.steps.map((s) => `  ${s.stepNumber}. Action: ${s.action} → Expected: ${s.expectedResult}${s.testData ? ` (Data: ${s.testData})` : ''}`).join('\n')}
+- **Expected Result**: ${tc.expectedResult}`
+    )
+    .join('\n---\n');
+
+  return `Convert the following manual test cases for the "${featureArea}" feature area into a cohesive Playwright test file.
+
+## Test Cases (${testCases.length} total)
+${testCasesText}
+
+## Project Context
+- Language: ${projectContext.language}
+- Frameworks: ${projectContext.frameworks.join(', ')}
+- Has Frontend: ${isWeb}
+- Has Backend API: ${projectContext.hasBackend}
+
+## Requirements
+1. Include Playwright import at top: import { test, expect } from '@playwright/test';
+2. Wrap all tests inside: test.describe('${featureArea}', () => { ... });
+3. Implement an individual test(...) block for each test case listed above with its ID in the title or comment.
+4. Use resilient Playwright locators: getByRole, getByLabel, getByText, getByTestId.
+5. ${isWeb ? 'Test web UI interactions matching the steps' : isAPI ? 'Use request context for API testing' : 'Adapt tests appropriately'}
+6. Add assertions matching each expected result.
+7. Include // TODO: comments for dynamic values, authentication, or specific URLs.
+8. Return clean TypeScript code ONLY. Do NOT include markdown code fences or conversational text.`;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

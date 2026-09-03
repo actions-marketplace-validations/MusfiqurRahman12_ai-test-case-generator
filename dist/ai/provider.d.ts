@@ -24,6 +24,11 @@ export interface AIProvider {
      * Generate Playwright automation code for a manual test case.
      */
     generateAutomationCode(testCase: TestCase, projectContext: ProjectContext): Promise<string>;
+    /**
+     * Generate Playwright automation code for an entire feature area suite (batch mode).
+     * Bundles all test cases into a single API call to minimize quota consumption.
+     */
+    generateAutomationSuite?(featureArea: string, testCases: TestCase[], projectContext: ProjectContext): Promise<string>;
 }
 import { Config } from '../config';
 export declare function createAIProvider(config: Config): AIProvider;

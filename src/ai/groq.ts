@@ -22,6 +22,7 @@ import {
   buildIncrementalPrompt,
   buildDecisionPrompt,
   buildAutomationPrompt,
+  buildAutomationSuitePrompt,
   TEST_CASE_JSON_SCHEMA,
   TEST_DECISION_JSON_SCHEMA,
 } from './prompts';
@@ -152,6 +153,38 @@ export class GroqProvider implements AIProvider {
     } catch (error) {
       core.warning(`[Groq] Automation generation failed for ${testCase.id}: ${error}`);
       return generateFallbackAutomation(testCase);
+    }
+  }
+
+  async generateAutomationSuite(
+    featureArea: string,
+    testCases: TestCase[],
+    projectContext: ProjectContext
+  ): Promise<string> {
+    const userPrompt = buildAutomationSuitePrompt(featureArea, testCases, projectContext);
+
+    core.info(`[Groq] Generating Playwright automation suite for "${featureArea}" (${testCases.length} tests in 1 batch call)...`);
+
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a Playwright test automation expert. Generate clean, production-ready Playwright test suite code. Return ONLY valid TypeScript code, no markdown fences or explanations.',
+          },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.2,
+        max_tokens: 8192,
+      });
+
+      const text = response.choices[0]?.message?.content || '';
+      return cleanCodeOutput(text);
+    } catch (error) {
+      core.warning(`[Groq] Automation suite generation failed for "${featureArea}": ${error}`);
+      throw error;
     }
   }
 }

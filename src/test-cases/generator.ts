@@ -60,6 +60,19 @@ export async function generateTestCases(
 
   // 2. For incremental runs, check if test cases are needed
   if (!changeSet.isFullScan) {
+    // Zero-cost pre-filter: Skip AI call entirely if all changed files are test files or docs
+    if (areAllChangesTrivialOrTests(changeSet)) {
+      core.info('Incremental run — all modified files are test files or docs. Skipping AI decision (0 API calls used).');
+      return {
+        newTestCases: [],
+        updatedTestCases: [],
+        warnings: [],
+        tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        skipped: true,
+        skipReason: 'All changed files are test files, documentation, or metadata (skipped locally to preserve quota)',
+      };
+    }
+
     core.info('Incremental run — checking if changes need test cases...');
 
     const decision = await aiProvider.shouldCreateTestCase(changeSet);
@@ -193,4 +206,30 @@ function hasContentChanged(existing: TestCase, generated: TestCase): boolean {
   return existingSteps !== generatedSteps ||
     existing.expectedResult !== generated.expectedResult ||
     existing.priority !== generated.priority;
+}
+
+/**
+ * Checks whether all changed files in an incremental change set are tests, documentation,
+ * or non-functional configuration files. This allows skipping AI decision calls (0 API calls).
+ */
+function areAllChangesTrivialOrTests(changeSet: ChangeSet): boolean {
+  if (!changeSet.files || changeSet.files.length === 0) return true;
+
+  const isTrivialOrTestFile = (filePath: string): boolean => {
+    const lower = filePath.toLowerCase().replace(/\\/g, '/');
+    // Test directories
+    if (/(^|\/)(tests?|__tests__|specs?|e2e|cypress|\.testcases)\//i.test(lower)) return true;
+    // Test file naming conventions
+    if (/\.(test|spec)\.[a-z0-9]+$/i.test(lower)) return true;
+    if (/(^|\/)test_.*\.py$/i.test(lower) || /.*_test\.(go|py|rb)$/i.test(lower)) return true;
+    if (/.*test\.(java|kt|cs)$/i.test(lower)) return true;
+    // Documentation & text
+    if (/\.(md|markdown|txt|rst|adoc)$/i.test(lower)) return true;
+    // Tool configs that don't change app logic
+    if (/(^|\/)\.(eslintrc|prettierrc|editorconfig|gitignore|gitattributes|npmignore)/i.test(lower)) return true;
+    if (/^(license|readme|changelog|contributing)/i.test(lower)) return true;
+    return false;
+  };
+
+  return changeSet.files.every((f) => isTrivialOrTestFile(f.filePath));
 }

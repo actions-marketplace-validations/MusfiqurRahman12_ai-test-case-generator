@@ -131,4 +131,9 @@ export declare function buildDecisionPrompt(changeSet: ChangeSet): string;
  * Build the prompt for generating Playwright automation code.
  */
 export declare function buildAutomationPrompt(testCase: TestCase, projectContext: ProjectContext): string;
+/**
+ * Build the prompt for generating an entire Playwright automation suite (batch mode).
+ * Combines all test cases in a feature area into a single prompt to minimize API calls.
+ */
+export declare function buildAutomationSuitePrompt(featureArea: string, testCases: TestCase[], projectContext: ProjectContext): string;
 //# sourceMappingURL=prompts.d.ts.map

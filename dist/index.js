@@ -37261,6 +37261,27 @@ class ClaudeProvider {
             return generateFallbackAutomation(testCase);
         }
     }
+    async generateAutomationSuite(featureArea, testCases, projectContext) {
+        const userPrompt = (0, prompts_1.buildAutomationSuitePrompt)(featureArea, testCases, projectContext);
+        core.info(`[Claude] Generating Playwright automation suite for "${featureArea}" (${testCases.length} tests in 1 batch call)...`);
+        try {
+            const response = await this.client.messages.create({
+                model: this.model,
+                max_tokens: 8192,
+                system: 'You are a Playwright test automation expert. Generate clean, production-ready Playwright test code. Return ONLY the TypeScript code, no markdown fences or explanations.',
+                messages: [{ role: 'user', content: userPrompt }],
+            });
+            const textBlock = response.content.find((b) => b.type === 'text');
+            if (!textBlock || textBlock.type !== 'text') {
+                throw new Error('No text content in Claude response');
+            }
+            return cleanCodeOutput(textBlock.text);
+        }
+        catch (error) {
+            core.warning(`[Claude] Automation suite generation failed for "${featureArea}": ${error}`);
+            throw error;
+        }
+    }
 }
 exports.ClaudeProvider = ClaudeProvider;
 // ---------------------------------------------------------------------------
@@ -37350,10 +37371,65 @@ exports.GeminiProvider = void 0;
 const generative_ai_1 = __nccwpck_require__(7656);
 const core = __importStar(__nccwpck_require__(7484));
 const prompts_1 = __nccwpck_require__(289);
+// Rate pacing tracker for free tier
+let lastCallTimestamp = 0;
+async function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+/**
+ * Enforces a minimal delay between consecutive calls to avoid bursting the 15 RPM quota.
+ */
+async function paceRequest(minIntervalMs = 1200) {
+    const now = Date.now();
+    const elapsed = now - lastCallTimestamp;
+    if (elapsed < minIntervalMs) {
+        await sleep(minIntervalMs - elapsed);
+    }
+    lastCallTimestamp = Date.now();
+}
+/**
+ * Executes a Gemini API call with exponential backoff retry on 429 / RESOURCE_EXHAUSTED
+ * and transient network errors to protect the free tier from crashing workflows.
+ */
+async function callWithRetry(actionName, fn, maxRetries = 3) {
+    let attempt = 0;
+    while (true) {
+        attempt++;
+        try {
+            await paceRequest();
+            return await fn();
+        }
+        catch (error) {
+            const errorMsg = String(error?.message || error);
+            const isRateLimit = errorMsg.includes('429') ||
+                errorMsg.includes('RESOURCE_EXHAUSTED') ||
+                error?.status === 429;
+            const isTransient = errorMsg.includes('503') ||
+                errorMsg.includes('Service Unavailable') ||
+                errorMsg.includes('fetch failed') ||
+                errorMsg.includes('ECONNRESET');
+            if ((isRateLimit || isTransient) && attempt <= maxRetries) {
+                // Backoff: 2.5s, 5s, 10s + jitter
+                const baseDelay = isRateLimit ? 2500 * Math.pow(2, attempt - 1) : 1500 * attempt;
+                const jitter = Math.floor(Math.random() * 800);
+                const delayMs = baseDelay + jitter;
+                core.warning(`[Gemini] ${actionName}: ${isRateLimit ? 'Rate limit (429/quota)' : 'Transient network error'} hit. ` +
+                    `Retrying in ${(delayMs / 1000).toFixed(1)}s (attempt ${attempt}/${maxRetries})...`);
+                await sleep(delayMs);
+                continue;
+            }
+            throw error;
+        }
+    }
+}
 class GeminiProvider {
     name = 'Gemini';
+    apiKey;
+    modelName;
     model;
     constructor(apiKey, modelName) {
+        this.apiKey = apiKey;
+        this.modelName = modelName;
         const genAI = new generative_ai_1.GoogleGenerativeAI(apiKey);
         this.model = genAI.getGenerativeModel({
             model: modelName,
@@ -37368,10 +37444,12 @@ class GeminiProvider {
         const userPrompt = changeSet.isFullScan
             ? (0, prompts_1.buildFullScanPrompt)(context)
             : (0, prompts_1.buildIncrementalPrompt)(context, changeSet, existingTests);
-        core.info(`[Gemini] Generating test cases...`);
+        core.info(`[Gemini] Generating test cases (model: ${this.modelName})...`);
         try {
-            const result = await this.model.generateContent({
-                contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+            const result = await callWithRetry('Test case generation', async () => {
+                return await this.model.generateContent({
+                    contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+                });
             });
             const response = result.response;
             const text = response.text();
@@ -37386,7 +37464,6 @@ class GeminiProvider {
                 commitSha: changeSet.headSha,
             }));
             const warnings = Array.isArray(parsed.warnings) ? parsed.warnings : [];
-            // Gemini doesn't provide granular token usage in the same way
             const usage = response.usageMetadata;
             return {
                 testCases,
@@ -37407,17 +37484,19 @@ class GeminiProvider {
         const userPrompt = (0, prompts_1.buildDecisionPrompt)(changeSet);
         core.info(`[Gemini] Analyzing whether changes need test cases...`);
         try {
-            const result = await this.model.generateContent({
-                contents: [
-                    {
-                        role: 'user',
-                        parts: [
-                            {
-                                text: `You are a QA engineer. Analyze code changes and decide if they need test cases. Respond with valid JSON.\n\n${userPrompt}`,
-                            },
-                        ],
-                    },
-                ],
+            const result = await callWithRetry('Decision analysis', async () => {
+                return await this.model.generateContent({
+                    contents: [
+                        {
+                            role: 'user',
+                            parts: [
+                                {
+                                    text: `You are a QA engineer. Analyze code changes and decide if they need test cases. Respond with valid JSON.\n\n${userPrompt}`,
+                                },
+                            ],
+                        },
+                    ],
+                });
             });
             const text = result.response.text();
             return parseJSON(text);
@@ -37436,28 +37515,61 @@ class GeminiProvider {
         const userPrompt = (0, prompts_1.buildAutomationPrompt)(testCase, projectContext);
         core.info(`[Gemini] Generating Playwright automation for ${testCase.id}...`);
         try {
-            // Switch to text mode for code generation
-            const genAI = new generative_ai_1.GoogleGenerativeAI(this.model.apiKey || '');
-            const codeModel = genAI.getGenerativeModel({
-                model: this.model.model || 'gemini-2.5-flash',
+            return await callWithRetry(`Automation for ${testCase.id}`, async () => {
+                const genAI = new generative_ai_1.GoogleGenerativeAI(this.apiKey);
+                const codeModel = genAI.getGenerativeModel({
+                    model: this.modelName,
+                });
+                const result = await codeModel.generateContent({
+                    contents: [
+                        {
+                            role: 'user',
+                            parts: [
+                                {
+                                    text: `You are a Playwright test automation expert. Generate clean, production-ready Playwright test code. Return ONLY the TypeScript code, no markdown fences or explanations.\n\n${userPrompt}`,
+                                },
+                            ],
+                        },
+                    ],
+                });
+                return cleanCodeOutput(result.response.text());
             });
-            const result = await codeModel.generateContent({
-                contents: [
-                    {
-                        role: 'user',
-                        parts: [
-                            {
-                                text: `You are a Playwright test automation expert. Generate clean, production-ready Playwright test code. Return ONLY the TypeScript code, no markdown fences or explanations.\n\n${userPrompt}`,
-                            },
-                        ],
-                    },
-                ],
-            });
-            return cleanCodeOutput(result.response.text());
         }
         catch (error) {
             core.warning(`[Gemini] Automation generation failed for ${testCase.id}: ${error}`);
             return generateFallbackAutomation(testCase);
+        }
+    }
+    /**
+     * Batch generation: generate all Playwright tests for a feature area in a single API call.
+     */
+    async generateAutomationSuite(featureArea, testCases, projectContext) {
+        const userPrompt = (0, prompts_1.buildAutomationSuitePrompt)(featureArea, testCases, projectContext);
+        core.info(`[Gemini] Generating Playwright automation suite for "${featureArea}" (${testCases.length} tests in 1 batch call)...`);
+        try {
+            return await callWithRetry(`Automation suite for ${featureArea}`, async () => {
+                const genAI = new generative_ai_1.GoogleGenerativeAI(this.apiKey);
+                const codeModel = genAI.getGenerativeModel({
+                    model: this.modelName,
+                });
+                const result = await codeModel.generateContent({
+                    contents: [
+                        {
+                            role: 'user',
+                            parts: [
+                                {
+                                    text: `You are a Playwright test automation expert. Generate clean, production-ready Playwright test suite code. Return ONLY valid TypeScript code, no markdown fences or explanations.\n\n${userPrompt}`,
+                                },
+                            ],
+                        },
+                    ],
+                });
+                return cleanCodeOutput(result.response.text());
+            });
+        }
+        catch (error) {
+            core.warning(`[Gemini] Automation suite generation failed for "${featureArea}": ${error}`);
+            throw error;
         }
     }
 }
@@ -37658,6 +37770,30 @@ class GroqProvider {
             return generateFallbackAutomation(testCase);
         }
     }
+    async generateAutomationSuite(featureArea, testCases, projectContext) {
+        const userPrompt = (0, prompts_1.buildAutomationSuitePrompt)(featureArea, testCases, projectContext);
+        core.info(`[Groq] Generating Playwright automation suite for "${featureArea}" (${testCases.length} tests in 1 batch call)...`);
+        try {
+            const response = await this.client.chat.completions.create({
+                model: this.model,
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are a Playwright test automation expert. Generate clean, production-ready Playwright test suite code. Return ONLY valid TypeScript code, no markdown fences or explanations.',
+                    },
+                    { role: 'user', content: userPrompt },
+                ],
+                temperature: 0.2,
+                max_tokens: 8192,
+            });
+            const text = response.choices[0]?.message?.content || '';
+            return cleanCodeOutput(text);
+        }
+        catch (error) {
+            core.warning(`[Groq] Automation suite generation failed for "${featureArea}": ${error}`);
+            throw error;
+        }
+    }
 }
 exports.GroqProvider = GroqProvider;
 // ---------------------------------------------------------------------------
@@ -37716,6 +37852,7 @@ exports.buildFullScanPrompt = buildFullScanPrompt;
 exports.buildIncrementalPrompt = buildIncrementalPrompt;
 exports.buildDecisionPrompt = buildDecisionPrompt;
 exports.buildAutomationPrompt = buildAutomationPrompt;
+exports.buildAutomationSuitePrompt = buildAutomationSuitePrompt;
 // ---------------------------------------------------------------------------
 // JSON Schema (shared across providers)
 // ---------------------------------------------------------------------------
@@ -37944,6 +38081,45 @@ ${testCase.expectedResult}
 
 Return ONLY the TypeScript code for the Playwright test file. Do NOT include markdown code fences.`;
 }
+/**
+ * Build the prompt for generating an entire Playwright automation suite (batch mode).
+ * Combines all test cases in a feature area into a single prompt to minimize API calls.
+ */
+function buildAutomationSuitePrompt(featureArea, testCases, projectContext) {
+    const isWeb = projectContext.hasFrontend;
+    const isAPI = projectContext.hasBackend && !projectContext.hasFrontend;
+    const testCasesText = testCases
+        .map((tc, idx) => `
+### Test Case ${idx + 1}: [${tc.id}] ${tc.title}
+- **Type**: ${tc.type}
+- **Description**: ${tc.description}
+- **Preconditions**:
+${tc.preconditions.length > 0 ? tc.preconditions.map((p) => `  - ${p}`).join('\n') : '  - None'}
+- **Steps**:
+${tc.steps.map((s) => `  ${s.stepNumber}. Action: ${s.action} → Expected: ${s.expectedResult}${s.testData ? ` (Data: ${s.testData})` : ''}`).join('\n')}
+- **Expected Result**: ${tc.expectedResult}`)
+        .join('\n---\n');
+    return `Convert the following manual test cases for the "${featureArea}" feature area into a cohesive Playwright test file.
+
+## Test Cases (${testCases.length} total)
+${testCasesText}
+
+## Project Context
+- Language: ${projectContext.language}
+- Frameworks: ${projectContext.frameworks.join(', ')}
+- Has Frontend: ${isWeb}
+- Has Backend API: ${projectContext.hasBackend}
+
+## Requirements
+1. Include Playwright import at top: import { test, expect } from '@playwright/test';
+2. Wrap all tests inside: test.describe('${featureArea}', () => { ... });
+3. Implement an individual test(...) block for each test case listed above with its ID in the title or comment.
+4. Use resilient Playwright locators: getByRole, getByLabel, getByText, getByTestId.
+5. ${isWeb ? 'Test web UI interactions matching the steps' : isAPI ? 'Use request context for API testing' : 'Adapt tests appropriately'}
+6. Add assertions matching each expected result.
+7. Include // TODO: comments for dynamic values, authentication, or specific URLs.
+8. Return clean TypeScript code ONLY. Do NOT include markdown code fences or conversational text.`;
+}
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -38097,6 +38273,23 @@ async function generateAutomation(aiProvider, testCases, projectContext, automat
 // Spec File Generation
 // ---------------------------------------------------------------------------
 async function generateSpecFile(aiProvider, featureArea, testCases, projectContext) {
+    // Batch optimization: generate the whole feature spec in 1 AI call to conserve API quota
+    if (typeof aiProvider.generateAutomationSuite === 'function') {
+        try {
+            core.info(`[Batch Automation] Generating spec for "${featureArea}" (${testCases.length} tests in 1 AI call)...`);
+            const suiteCode = await aiProvider.generateAutomationSuite(featureArea, testCases, projectContext);
+            if (suiteCode && (suiteCode.includes('test(') || suiteCode.includes('test.describe'))) {
+                if (suiteCode.includes('@playwright/test')) {
+                    return suiteCode.trim() + '\n';
+                }
+                return `${(0, templates_1.generateTestFileHeader)(featureArea)}\n${suiteCode.trim()}\n`;
+            }
+        }
+        catch (batchError) {
+            core.warning(`Batch suite generation failed for "${featureArea}", falling back to sequential generation: ${batchError}`);
+        }
+    }
+    // Sequential fallback
     let content = (0, templates_1.generateTestFileHeader)(featureArea);
     content += `test.describe('${featureArea}', () => {\n\n`;
     for (const tc of testCases) {
@@ -38691,8 +38884,10 @@ const path = __importStar(__nccwpck_require__(6928));
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-/** Max characters of source code to send in a single AI request (~100k tokens) */
-const MAX_CONTEXT_CHARS = 300_000;
+/** Max characters of source code to send in a single AI request (~30k tokens for free tier TPM headroom) */
+const MAX_CONTEXT_CHARS = 120_000;
+/** Max characters per individual file to prevent huge files from dominating context */
+const MAX_FILE_CHARS = 6_000;
 // Framework detection patterns
 const FRAMEWORK_INDICATORS = {
     react: ['react', 'react-dom', 'jsx', 'tsx'],
@@ -38751,7 +38946,10 @@ async function analyzeCode(changeSet, maxFiles) {
     const codeFiles = [];
     let totalChars = 0;
     for (const fileChange of filesToAnalyze) {
-        const content = fileChange.content || '';
+        let content = fileChange.content || '';
+        if (content.length > MAX_FILE_CHARS) {
+            content = smartSliceFile(content, MAX_FILE_CHARS);
+        }
         if (totalChars + content.length > MAX_CONTEXT_CHARS) {
             core.info(`Reached context limit at ${codeFiles.length} files (${totalChars} chars)`);
             break;
@@ -39022,6 +39220,19 @@ function countFileExtensions(dir, depth = 3) {
     }
     return counts;
 }
+/**
+ * Truncates very large files while preserving the file header (imports, exports, signatures)
+ * and the tail (bottom utilities/exports) to stay within model TPM limits.
+ */
+function smartSliceFile(content, maxChars) {
+    if (content.length <= maxChars)
+        return content;
+    const headChars = Math.floor(maxChars * 0.6);
+    const tailChars = Math.floor(maxChars * 0.35);
+    const head = content.substring(0, headChars);
+    const tail = content.substring(content.length - tailChars);
+    return `${head}\n\n// ... [truncated ${content.length - headChars - tailChars} characters for AI token efficiency] ...\n\n${tail}`;
+}
 
 
 /***/ }),
@@ -39079,7 +39290,7 @@ const core = __importStar(__nccwpck_require__(7484));
 // ---------------------------------------------------------------------------
 const DEFAULT_MODELS = {
     claude: 'claude-sonnet-4-20250514',
-    gemini: 'gemini-2.5-flash',
+    gemini: 'gemini-2.0-flash',
     groq: 'llama-3.3-70b-versatile',
 };
 // ---------------------------------------------------------------------------
@@ -40550,6 +40761,18 @@ async function generateTestCases(aiProvider, codeContext, changeSet, testOutputD
     core.info(`Found ${existingTestCases.length} existing test cases`);
     // 2. For incremental runs, check if test cases are needed
     if (!changeSet.isFullScan) {
+        // Zero-cost pre-filter: Skip AI call entirely if all changed files are test files or docs
+        if (areAllChangesTrivialOrTests(changeSet)) {
+            core.info('Incremental run — all modified files are test files or docs. Skipping AI decision (0 API calls used).');
+            return {
+                newTestCases: [],
+                updatedTestCases: [],
+                warnings: [],
+                tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+                skipped: true,
+                skipReason: 'All changed files are test files, documentation, or metadata (skipped locally to preserve quota)',
+            };
+        }
         core.info('Incremental run — checking if changes need test cases...');
         const decision = await aiProvider.shouldCreateTestCase(changeSet);
         core.info(`AI decision: ${decision.needsTestCase ? 'YES' : 'NO'} — ${decision.reasoning}`);
@@ -40652,6 +40875,37 @@ function hasContentChanged(existing, generated) {
     return existingSteps !== generatedSteps ||
         existing.expectedResult !== generated.expectedResult ||
         existing.priority !== generated.priority;
+}
+/**
+ * Checks whether all changed files in an incremental change set are tests, documentation,
+ * or non-functional configuration files. This allows skipping AI decision calls (0 API calls).
+ */
+function areAllChangesTrivialOrTests(changeSet) {
+    if (!changeSet.files || changeSet.files.length === 0)
+        return true;
+    const isTrivialOrTestFile = (filePath) => {
+        const lower = filePath.toLowerCase().replace(/\\/g, '/');
+        // Test directories
+        if (/(^|\/)(tests?|__tests__|specs?|e2e|cypress|\.testcases)\//i.test(lower))
+            return true;
+        // Test file naming conventions
+        if (/\.(test|spec)\.[a-z0-9]+$/i.test(lower))
+            return true;
+        if (/(^|\/)test_.*\.py$/i.test(lower) || /.*_test\.(go|py|rb)$/i.test(lower))
+            return true;
+        if (/.*test\.(java|kt|cs)$/i.test(lower))
+            return true;
+        // Documentation & text
+        if (/\.(md|markdown|txt|rst|adoc)$/i.test(lower))
+            return true;
+        // Tool configs that don't change app logic
+        if (/(^|\/)\.(eslintrc|prettierrc|editorconfig|gitignore|gitattributes|npmignore)/i.test(lower))
+            return true;
+        if (/^(license|readme|changelog|contributing)/i.test(lower))
+            return true;
+        return false;
+    };
+    return changeSet.files.every((f) => isTrivialOrTestFile(f.filePath));
 }
 
 

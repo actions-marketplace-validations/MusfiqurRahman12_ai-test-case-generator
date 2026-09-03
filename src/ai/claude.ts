@@ -22,6 +22,7 @@ import {
   buildIncrementalPrompt,
   buildDecisionPrompt,
   buildAutomationPrompt,
+  buildAutomationSuitePrompt,
   TEST_CASE_JSON_SCHEMA,
   TEST_DECISION_JSON_SCHEMA,
 } from './prompts';
@@ -145,6 +146,35 @@ export class ClaudeProvider implements AIProvider {
     } catch (error) {
       core.warning(`[Claude] Automation generation failed for ${testCase.id}: ${error}`);
       return generateFallbackAutomation(testCase);
+    }
+  }
+
+  async generateAutomationSuite(
+    featureArea: string,
+    testCases: TestCase[],
+    projectContext: ProjectContext
+  ): Promise<string> {
+    const userPrompt = buildAutomationSuitePrompt(featureArea, testCases, projectContext);
+
+    core.info(`[Claude] Generating Playwright automation suite for "${featureArea}" (${testCases.length} tests in 1 batch call)...`);
+
+    try {
+      const response = await this.client.messages.create({
+        model: this.model,
+        max_tokens: 8192,
+        system: 'You are a Playwright test automation expert. Generate clean, production-ready Playwright test code. Return ONLY the TypeScript code, no markdown fences or explanations.',
+        messages: [{ role: 'user', content: userPrompt }],
+      });
+
+      const textBlock = response.content.find((b) => b.type === 'text');
+      if (!textBlock || textBlock.type !== 'text') {
+        throw new Error('No text content in Claude response');
+      }
+
+      return cleanCodeOutput(textBlock.text);
+    } catch (error) {
+      core.warning(`[Claude] Automation suite generation failed for "${featureArea}": ${error}`);
+      throw error;
     }
   }
 }

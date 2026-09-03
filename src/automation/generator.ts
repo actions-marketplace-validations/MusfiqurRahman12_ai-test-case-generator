@@ -115,6 +115,28 @@ async function generateSpecFile(
   testCases: TestCase[],
   projectContext: ProjectContext
 ): Promise<string> {
+  // Batch optimization: generate the whole feature spec in 1 AI call to conserve API quota
+  if (typeof aiProvider.generateAutomationSuite === 'function') {
+    try {
+      core.info(`[Batch Automation] Generating spec for "${featureArea}" (${testCases.length} tests in 1 AI call)...`);
+      const suiteCode = await aiProvider.generateAutomationSuite(
+        featureArea,
+        testCases,
+        projectContext
+      );
+
+      if (suiteCode && (suiteCode.includes('test(') || suiteCode.includes('test.describe'))) {
+        if (suiteCode.includes('@playwright/test')) {
+          return suiteCode.trim() + '\n';
+        }
+        return `${generateTestFileHeader(featureArea)}\n${suiteCode.trim()}\n`;
+      }
+    } catch (batchError) {
+      core.warning(`Batch suite generation failed for "${featureArea}", falling back to sequential generation: ${batchError}`);
+    }
+  }
+
+  // Sequential fallback
   let content = generateTestFileHeader(featureArea);
   content += `test.describe('${featureArea}', () => {\n\n`;
 

@@ -14,5 +14,6 @@ export declare class ClaudeProvider implements AIProvider {
     generateTestCases(context: CodeContext, existingTests: TestCase[], changeSet: ChangeSet): Promise<AIGenerationResult>;
     shouldCreateTestCase(changeSet: ChangeSet): Promise<TestDecision>;
     generateAutomationCode(testCase: TestCase, projectContext: ProjectContext): Promise<string>;
+    generateAutomationSuite(featureArea: string, testCases: TestCase[], projectContext: ProjectContext): Promise<string>;
 }
 //# sourceMappingURL=claude.d.ts.map

@@ -47,6 +47,16 @@ export interface AIProvider {
     testCase: TestCase,
     projectContext: ProjectContext
   ): Promise<string>;
+
+  /**
+   * Generate Playwright automation code for an entire feature area suite (batch mode).
+   * Bundles all test cases into a single API call to minimize quota consumption.
+   */
+  generateAutomationSuite?(
+    featureArea: string,
+    testCases: TestCase[],
+    projectContext: ProjectContext
+  ): Promise<string>;
 }
 
 // ---------------------------------------------------------------------------

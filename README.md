@@ -216,6 +216,14 @@ playwright.config.ts    # Auto-created if missing
 
 *Based on Claude Sonnet pricing. Use `max_files_per_run` to control costs.*
 
+### 🆓 Gemini Free Tier Optimization
+
+When using `ai_provider: gemini`:
+- **Default Model**: Uses `gemini-2.0-flash` with **1,500 requests/day** and **15 requests/minute** on the Google AI Studio free tier.
+- **Batch Automation**: Playwright tests are generated in a single batch call per feature area rather than test-by-test, saving up to 75% of API requests.
+- **Auto-Retry & Rate Pacing**: Built-in exponential backoff automatically recovers from transient `429 RESOURCE_EXHAUSTED` limits without failing your CI.
+- **Zero-Cost Commits**: Commits that only modify tests, docs, or configs are skipped locally without consuming any API quota.
+
 ## 📄 License
 
 MIT

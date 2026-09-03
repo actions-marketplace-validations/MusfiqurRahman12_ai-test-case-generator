@@ -21,8 +21,10 @@ import {
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Max characters of source code to send in a single AI request (~100k tokens) */
-const MAX_CONTEXT_CHARS = 300_000;
+/** Max characters of source code to send in a single AI request (~30k tokens for free tier TPM headroom) */
+const MAX_CONTEXT_CHARS = 120_000;
+/** Max characters per individual file to prevent huge files from dominating context */
+const MAX_FILE_CHARS = 6_000;
 
 // Framework detection patterns
 const FRAMEWORK_INDICATORS: Record<ProjectFramework, string[]> = {
@@ -92,7 +94,11 @@ export async function analyzeCode(
   let totalChars = 0;
 
   for (const fileChange of filesToAnalyze) {
-    const content = fileChange.content || '';
+    let content = fileChange.content || '';
+    if (content.length > MAX_FILE_CHARS) {
+      content = smartSliceFile(content, MAX_FILE_CHARS);
+    }
+
     if (totalChars + content.length > MAX_CONTEXT_CHARS) {
       core.info(`Reached context limit at ${codeFiles.length} files (${totalChars} chars)`);
       break;
@@ -373,3 +379,17 @@ function countFileExtensions(dir: string, depth = 3): Record<string, number> {
 
   return counts;
 }
+
+/**
+ * Truncates very large files while preserving the file header (imports, exports, signatures)
+ * and the tail (bottom utilities/exports) to stay within model TPM limits.
+ */
+function smartSliceFile(content: string, maxChars: number): string {
+  if (content.length <= maxChars) return content;
+  const headChars = Math.floor(maxChars * 0.6);
+  const tailChars = Math.floor(maxChars * 0.35);
+  const head = content.substring(0, headChars);
+  const tail = content.substring(content.length - tailChars);
+  return `${head}\n\n// ... [truncated ${content.length - headChars - tailChars} characters for AI token efficiency] ...\n\n${tail}`;
+}
+

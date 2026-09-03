@@ -7,10 +7,16 @@ import { AIProvider } from './provider';
 import { CodeContext, TestCase, TestDecision, AIGenerationResult, ChangeSet, ProjectContext } from '../test-cases/types';
 export declare class GeminiProvider implements AIProvider {
     readonly name = "Gemini";
+    private apiKey;
+    private modelName;
     private model;
     constructor(apiKey: string, modelName: string);
     generateTestCases(context: CodeContext, existingTests: TestCase[], changeSet: ChangeSet): Promise<AIGenerationResult>;
     shouldCreateTestCase(changeSet: ChangeSet): Promise<TestDecision>;
     generateAutomationCode(testCase: TestCase, projectContext: ProjectContext): Promise<string>;
+    /**
+     * Batch generation: generate all Playwright tests for a feature area in a single API call.
+     */
+    generateAutomationSuite(featureArea: string, testCases: TestCase[], projectContext: ProjectContext): Promise<string>;
 }
 //# sourceMappingURL=gemini.d.ts.map
