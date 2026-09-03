@@ -1,0 +1,111 @@
+name: 'AI Test Case Generator'
+description: 'AI-powered test case generation — creates manual test cases with steps, syncs to Jira/ClickUp/Trello, and progressively builds Playwright automation'
+author: 'AI Test Case Generator'
+
+branding:
+  icon: 'check-circle'
+  color: 'purple'
+
+inputs:
+  # AI Provider Configuration
+  ai_provider:
+    description: 'AI provider to use for test generation: claude, gemini, or groq'
+    required: false
+    default: 'claude'
+  ai_api_key:
+    description: 'API key for the selected AI provider'
+    required: true
+  ai_model:
+    description: 'Specific model to use (leave empty for provider default)'
+    required: false
+    default: ''
+
+  # Project Management Tool
+  pm_tool:
+    description: 'Project management tool to sync test cases: jira, clickup, trello, or none'
+    required: false
+    default: 'none'
+
+  # Jira Configuration
+  jira_base_url:
+    description: 'Jira instance base URL (e.g., https://yourorg.atlassian.net)'
+    required: false
+    default: ''
+  jira_email:
+    description: 'Jira user email for authentication'
+    required: false
+    default: ''
+  jira_api_token:
+    description: 'Jira API token'
+    required: false
+    default: ''
+  jira_project_key:
+    description: 'Jira project key (e.g., PROJ)'
+    required: false
+    default: ''
+
+  # ClickUp Configuration
+  clickup_api_token:
+    description: 'ClickUp API token'
+    required: false
+    default: ''
+  clickup_list_id:
+    description: 'ClickUp list ID to create tasks in'
+    required: false
+    default: ''
+
+  # Trello Configuration
+  trello_api_key:
+    description: 'Trello API key'
+    required: false
+    default: ''
+  trello_api_token:
+    description: 'Trello API token'
+    required: false
+    default: ''
+  trello_board_id:
+    description: 'Trello board ID'
+    required: false
+    default: ''
+  trello_list_id:
+    description: 'Trello list ID for test case cards'
+    required: false
+    default: ''
+
+  # Test Generation Options
+  generate_automation:
+    description: 'Generate Playwright automation test files'
+    required: false
+    default: 'true'
+  max_files_per_run:
+    description: 'Maximum number of source files to analyze per run (controls AI API cost)'
+    required: false
+    default: '50'
+  test_output_dir:
+    description: 'Directory for storing test case files'
+    required: false
+    default: '.testcases'
+  auto_commit:
+    description: 'Auto-commit generated test case files to the branch'
+    required: false
+    default: 'true'
+  automation_output_dir:
+    description: 'Directory for Playwright automation test files'
+    required: false
+    default: 'tests/e2e'
+
+outputs:
+  test_cases_created:
+    description: 'Number of new test cases created'
+  test_cases_updated:
+    description: 'Number of existing test cases updated'
+  automation_files_generated:
+    description: 'Number of Playwright test files generated'
+  sync_status:
+    description: 'Sync status with the configured PM tool'
+  skipped_reason:
+    description: 'If the run was skipped, the reason why'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

@@ -1,0 +1,42 @@
+{
+  "name": "ai-test-case-generator",
+  "version": "1.0.0",
+  "description": "AI-powered GitHub Action that generates manual and automated test cases from your codebase",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "ncc build src/index.ts -o dist --source-map --license licenses.txt",
+    "lint": "eslint src/ --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "github-action",
+    "test-cases",
+    "ai",
+    "playwright",
+    "jira",
+    "clickup",
+    "trello",
+    "test-automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@actions/core": "^1.10.1",
+    "@actions/exec": "^1.1.1",
+    "@actions/github": "^6.0.0",
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@google/generative-ai": "^0.21.0",
+    "groq-sdk": "^0.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vercel/ncc": "^0.38.3",
+    "eslint": "^8.56.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.0"
+  }
+}
