@@ -52,9 +52,7 @@ async function callWithRetry<T>(
   fn: () => Promise<T>,
   maxRetries = 3
 ): Promise<T> {
-  let attempt = 0;
-  while (true) {
-    attempt++;
+  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
     try {
       await paceRequest();
       return await fn();
@@ -86,6 +84,7 @@ async function callWithRetry<T>(
       throw error;
     }
   }
+  throw new Error(`[Gemini] ${actionName} failed after ${maxRetries} retries`);
 }
 
 export class GeminiProvider implements AIProvider {

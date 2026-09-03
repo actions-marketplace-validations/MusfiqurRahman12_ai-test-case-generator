@@ -5,7 +5,7 @@
  * reviewing in pull requests.
  */
 
-import { TestCase, TestStep } from './types';
+import { TestCase } from './types';
 
 // ---------------------------------------------------------------------------
 // Single Test Case Formatting

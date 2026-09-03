@@ -9,8 +9,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as core from '@actions/core';
-import { TestCase, SyncState, SyncRecord } from './types';
-import { formatTestCaseMarkdown, formatTestSuiteMarkdown } from './formatter';
+import { TestCase, SyncState } from './types';
+import { formatTestSuiteMarkdown } from './formatter';
 
 // ---------------------------------------------------------------------------
 // Constants

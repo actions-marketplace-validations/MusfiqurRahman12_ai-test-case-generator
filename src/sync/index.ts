@@ -6,7 +6,7 @@
  */
 
 import * as core from '@actions/core';
-import { Config, PMToolType } from '../config';
+import { Config } from '../config';
 import { TestCase, SyncState, SyncResult, SyncRecord } from '../test-cases/types';
 import { loadSyncState, saveSyncState, computeContentHash } from '../test-cases/manager';
 import { syncToJira } from './jira';

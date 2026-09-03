@@ -7,7 +7,7 @@
 
 import * as core from '@actions/core';
 import { TrelloConfig } from '../config';
-import { TestCase, SyncState, SyncResult, SyncRecord } from '../test-cases/types';
+import { TestCase, SyncState, SyncResult } from '../test-cases/types';
 import { computeContentHash } from '../test-cases/manager';
 
 // ---------------------------------------------------------------------------

@@ -217,7 +217,7 @@ function groupByFeatureArea(testCases: TestCase[]): Record<string, TestCase[]> {
 /**
  * Extract a test(...) block from AI-generated code.
  */
-function extractTestBlock(code: string, title: string): string | null {
+function extractTestBlock(code: string, _title: string): string | null {
   // Try to find a test() or test.only() block
   const testPattern = /test(?:\.only)?\s*\(/;
   const match = code.match(testPattern);

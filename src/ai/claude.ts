@@ -23,8 +23,6 @@ import {
   buildDecisionPrompt,
   buildAutomationPrompt,
   buildAutomationSuitePrompt,
-  TEST_CASE_JSON_SCHEMA,
-  TEST_DECISION_JSON_SCHEMA,
 } from './prompts';
 
 export class ClaudeProvider implements AIProvider {

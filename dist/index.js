@@ -37392,9 +37392,7 @@ async function paceRequest(minIntervalMs = 1200) {
  * and transient network errors to protect the free tier from crashing workflows.
  */
 async function callWithRetry(actionName, fn, maxRetries = 3) {
-    let attempt = 0;
-    while (true) {
-        attempt++;
+    for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
         try {
             await paceRequest();
             return await fn();
@@ -37421,6 +37419,7 @@ async function callWithRetry(actionName, fn, maxRetries = 3) {
             throw error;
         }
     }
+    throw new Error(`[Gemini] ${actionName} failed after ${maxRetries} retries`);
 }
 class GeminiProvider {
     name = 'Gemini';
@@ -38358,7 +38357,7 @@ function groupByFeatureArea(testCases) {
 /**
  * Extract a test(...) block from AI-generated code.
  */
-function extractTestBlock(code, title) {
+function extractTestBlock(code, _title) {
     // Try to find a test() or test.only() block
     const testPattern = /test(?:\.only)?\s*\(/;
     const match = code.match(testPattern);
