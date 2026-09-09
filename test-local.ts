@@ -28,7 +28,7 @@ import * as path from 'path';
 
 const API_KEY = process.env.GEMINI_API_KEY || '';
 const PROJECT_PATH = process.argv[2] || process.env.TEST_PROJECT_PATH || '.';
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';      // Free tier model (1,500 RPD, 15 RPM)
+const MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';      // Free tier model (1,500 RPD, 15 RPM)
 const MAX_FILES = 8;                     // Keep context small
 const MAX_FILE_CHARS = 3000;             // Truncate large files
 const MAX_TOTAL_CHARS = 80_000;          // ~20K tokens input (well under 1M limit)

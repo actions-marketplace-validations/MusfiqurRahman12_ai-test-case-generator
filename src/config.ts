@@ -60,7 +60,7 @@ export interface Config {
 
 const DEFAULT_MODELS: Record<AIProviderType, string> = {
   claude: 'claude-sonnet-4-20250514',
-  gemini: 'gemini-2.0-flash',
+  gemini: 'gemini-3.6-flash',
   groq: 'llama-3.3-70b-versatile',
 };
 

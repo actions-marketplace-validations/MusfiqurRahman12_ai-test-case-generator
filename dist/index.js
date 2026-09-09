@@ -39289,7 +39289,7 @@ const core = __importStar(__nccwpck_require__(7484));
 // ---------------------------------------------------------------------------
 const DEFAULT_MODELS = {
     claude: 'claude-sonnet-4-20250514',
-    gemini: 'gemini-2.0-flash',
+    gemini: 'gemini-3.6-flash',
     groq: 'llama-3.3-70b-versatile',
 };
 // ---------------------------------------------------------------------------
