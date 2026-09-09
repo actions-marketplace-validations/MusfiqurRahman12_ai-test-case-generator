@@ -1,6 +1,6 @@
-name: 'AI Test Case Generator'
-description: 'AI-powered test case generation — creates manual test cases with steps, syncs to Jira/ClickUp/Trello, and progressively builds Playwright automation'
-author: 'AI Test Case Generator'
+name: 'AI Test Case & Playwright Generator'
+description: 'Generates manual QA test cases and Playwright suites using AI, syncing to Jira, ClickUp, or Trello.'
+author: 'Musfiqur Rahman'
 
 branding:
   icon: 'check-circle'
